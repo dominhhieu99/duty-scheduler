@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
-// === DÙNG PROXY — GỌI TRỰC TIẾP /api/... K HAY ĐỔI CỔNG ===
-const API = ''; // Để trống → gọi qua cùng domain, proxy tự chuyển đến cổng 8000
+// === Gọi qua proxy — không cần đổi cổng ===
+const API = '';
 
 const SHIFT_OPTIONS = ['MIDDAY SHIFT', 'OFFLINE', 'UPCODE', 'ONLINE', 'OFFLINE (U)'];
 const SHIFT_COLORS = {
@@ -19,8 +19,9 @@ function App() {
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const isAdmin = true;
 
+  // === Lấy danh sách nhân viên ===
   useEffect(() => {
-    console.log('📥 Đang lấy users qua proxy...');
+    console.log('📥 Đang lấy danh sách nhân viên...');
     fetch(`${API}/api/users`)
       .then(res => {
         console.log('→ Trạng thái:', res.status);
@@ -30,26 +31,32 @@ function App() {
         console.log('✅ Nhận được', data.length, 'nhân viên');
         setUsers(data);
       })
-      .catch(err => console.error('❌ Lỗi:', err));
+      .catch(err => console.error('❌ Lỗi lấy users:', err));
   }, []);
 
+  // === Lấy lịch khi có đủ dữ liệu ===
   useEffect(() => {
     if (!users.length) return;
+    console.log('📥 Đang tải lịch tháng', month, '/', year);
     fetch(`${API}/api/schedule/${year}/${month}`)
       .then(res => res.json())
-      .then(setSchedule);
+      .then(data => setSchedule(data))
+      .catch(err => console.error('❌ Lỗi lấy lịch:', err));
   }, [users, year, month]);
 
+  // === Lưu thay đổi ca trực ===
   const handleShiftChange = async (work_date, user_id, shift_type) => {
     if (!isAdmin) return alert('Chỉ Admin được sửa lịch!');
+    if (!shift_type) return; // Bỏ qua khi chọn trống
+
     if (shift_type === '__BUSY__') {
-      const reason = prompt('Lý do bận:');
+      const reason = prompt('Lý do bận:') || 'Không có ghi chú';
       await fetch(`${API}/api/unavailable`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id, date: work_date, reason })
       });
-      alert('✅ Đăng ký thành công!');
+      alert('✅ Đăng ký bận thành công!');
     } else {
       await fetch(`${API}/api/schedule/update`, {
         method: 'PUT',
@@ -57,37 +64,83 @@ function App() {
         body: JSON.stringify({ work_date, user_id, shift_type })
       });
     }
-    fetch(`${API}/api/schedule/${year}/${month}`)
-      .then(r => r.json())
-      .then(setSchedule);
+
+    // === Tải lại ngay sau khi lưu — KHÔNG BỊ MẤT ===
+    const res = await fetch(`${API}/api/schedule/${year}/${month}`);
+    const data = await res.json();
+    setSchedule(data);
   };
 
-  if (!schedule) return <div style={{ padding: 20 }}>Đang tải...<br/>Đang gọi: {API}/api/users</div>;
+  // === Nút Tải lại lịch thủ công ===
+  const reloadSchedule = async () => {
+    const res = await fetch(`${API}/api/schedule/${year}/${month}`);
+    const data = await res.json();
+    setSchedule(data);
+    alert('✅ Đã cập nhật lịch mới nhất!');
+  };
+
+  if (!schedule) return <div style={{ padding: 20 }}>Đang tải...</div>;
 
   return (
     <div style={{ padding: 16, fontFamily: 'Arial', fontSize: 13 }}>
       <h1 style={{ textAlign: 'center', marginBottom: 16 }}>
         📅 Lịch Trực Cảnh Báo — Tháng {month}/{year}
       </h1>
-      <div style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
+
+      {/* === Thanh công cụ: Tháng + Nút Tải lại === */}
+      <div style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <label>Năm:
-          <input type="number" value={year} onChange={e => setYear(+e.target.value)} style={{ width: 70, marginLeft: 5 }} />
+          <input 
+            type="number" 
+            value={year} 
+            onChange={e => setYear(+e.target.value)} 
+            style={{ width: 70, marginLeft: 5 }} 
+          />
         </label>
         <label>Tháng:
-          <select value={month} onChange={e => setMonth(+e.target.value)} style={{ marginLeft: 5 }}>
-            {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => <option key={m} value={m}>{m}</option>)}
+          <select 
+            value={month} 
+            onChange={e => setMonth(+e.target.value)} 
+            style={{ marginLeft: 5 }}
+          >
+            {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
           </select>
         </label>
-        <span style={{ marginLeft: 'auto', color: '#d93025', fontWeight: 'bold' }}>🔴 Quyền: ADMIN</span>
+        
+        {/* === Nút Tải lại lịch === */}
+        <button 
+          onClick={reloadSchedule}
+          style={{
+            background: '#34A853', 
+            color: 'white', 
+            border: 'none',
+            padding: '6px 14px', 
+            borderRadius: '4px', 
+            cursor: 'pointer',
+            fontWeight: 'bold'
+          }}
+        >
+          🔄 Tải lại lịch
+        </button>
+
+        <span style={{ marginLeft: 'auto', color: '#d93025', fontWeight: 'bold' }}>
+          🔴 Quyền: ADMIN
+        </span>
       </div>
-      <table border="1" cellPadding="5" cellSpacing="0" style={{ width: '100%', borderCollapse: 'collapse' }}>
+
+      {/* === Bảng lịch === */}
+      <table border="1" cellPadding="5" cellSpacing="0" 
+        style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: '#f1f3f4' }}>
             <th style={{ minWidth: 50 }}>Ngày</th>
             <th style={{ width: 50 }}>Thứ</th>
             {users.map(u => (
               <th key={u.id} style={{ whiteSpace: 'nowrap' }}>
-                {u.name}<br/><small style={{ color: '#666' }}>{u.phone}</small>
+                {u.name}<br/>
+                <small style={{ color: '#666' }}>{u.phone}</small>
               </th>
             ))}
           </tr>
@@ -105,6 +158,7 @@ function App() {
                   const key = [dayStr, u.id];
                   const current = schedule.schedule[key] || '';
                   const isBusy = schedule.unavailable[key];
+                  
                   return (
                     <td key={u.id} style={{
                       padding: 0,
@@ -114,12 +168,27 @@ function App() {
                       {isBusy ? (
                         <div style={{ padding: 4, textAlign: 'center' }}>⛔ Bận</div>
                       ) : (
-                        <select value={current}
+                        <select 
+                          value={current}
                           onChange={e => handleShiftChange(dayStr, u.id, e.target.value)}
-                          style={{ width: '100%', border: 'none', background: 'transparent', color: 'inherit', height: '100%', cursor: 'pointer' }}>
+                          style={{ 
+                            width: '100%', 
+                            border: 'none', 
+                            background: 'transparent', 
+                            color: 'inherit', 
+                            height: '100%', 
+                            cursor: 'pointer' 
+                          }}
+                        >
                           <option value="">-- Chọn --</option>
-                          {SHIFT_OPTIONS.map(s => <option key={s} value={s} style={{ color: 'black' }}>{s}</option>)}
-                          <option value="__BUSY__" style={{ color: 'red' }}>⛔ Đăng ký bận</option>
+                          {SHIFT_OPTIONS.map(s => (
+                            <option key={s} value={s} style={{ color: 'black' }}>
+                              {s}
+                            </option>
+                          ))}
+                          <option value="__BUSY__" style={{ color: 'red' }}>
+                            ⛔ Đăng ký bận
+                          </option>
                         </select>
                       )}
                     </td>
@@ -130,11 +199,14 @@ function App() {
           })}
         </tbody>
       </table>
+
+      {/* === Chú thích màu === */}
       <div style={{ marginTop: 16, fontSize: 12 }}>
         <strong>Chú thích:</strong>
         {Object.entries(SHIFT_COLORS).map(([name, color]) => (
           <span key={name} style={{ display: 'inline-flex', alignItems: 'center', margin: '0 8px' }}>
-            <span style={{ width: 16, height: 12, background: color, marginRight: 4, borderRadius: 2 }}></span>{name}
+            <span style={{ width: 16, height: 12, background: color, marginRight: 4, borderRadius: 2 }}></span>
+            {name}
           </span>
         ))}
       </div>
